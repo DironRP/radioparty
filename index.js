@@ -1,138 +1,49 @@
 const Discord = require('discord.js');
-const icy = require('icy');
-const fs = require('fs');
-const client = new Discord.Client();
-const {
-	prefix,
-	token,
-	voicechannel,
-	logchannel,
-	activity,
-	list
-} = require('./config.json');
+const client = new Discord.Client({ ws: { properties: { $browser: "Discord iOS" }} });
+client.login("6eadd2a798d427297772ab71fddd0e7a817eaf9c1c258b978379261e246eefbb");
 
-var serverQueue = [...list];
+client.on('ready', () => {
+  console.log("Logged in as " +  )
+})
 
-client.once('ready', () => {
-	clientLogMessage("Status: Connected to discord");
-	playStream();
+//TLDR: odpal komende #play
+client.on('message', message => {
+    if(message.content.indexOf("#") == 0) {
+        var msg = message.content;
+        var commands = msg.substring(1);
+        var args = commands.split("#");
+        
+        switch(args['0'].toLowerCase()) {
+            case 'play':
+                const channel = message.member.voice.channel;
+                if (channel && channel.type === 'voice') {
+                    if(args['1'] == null) {
+                      channel.join().then(conn => { conn.play('https://s2.radioparty.pl:8015/stream'); });
+                    } else {
+                      var url = "";
+                      switch(args['1']) {
+                        case 'radioparty':
+                          url = "https://s2.radioparty.pl:8015/stream";
+                          break;
+                        case 'qdance':
+                          url = "https://22713.live.streamtheworld.com/Q_DANCE.mp3";
+                          break;
+                        case 'rmfmaxx':
+                          url = "https://rs102-krk-cyfronet.rmfstream.pl/RMFMAXXX48";
+                          break;
+                        default:
+                          message.reply("Nieznana stacja radiowa: " + args['1']);
+                          break;
+                      }
+
+                      channel.join().then(conn => { 
+                        conn.play(url);
+                      });
+                    }
+                } else {
+                    message.reply('Not in VoiceChannel!');
+                }
+                break;
+        }
+    }
 });
-
-client.once('reconnecting', () => {
-	clientLogMessage("Status: Reconnected to discord");
-	playStream();
-});
-
-client.once('disconnect', () => {
-	clientLogMessage("Status: Disconnected from discord");
-});
-
-client.on('message', async message => {
-	if (!message.content.startsWith(prefix) || message.author.bot) return;
-	const args = message.content.slice(prefix.length).split(' ');
-	const command = args.shift().toLowerCase();
-});
-
-client.login(token);
-
-function playStream() {
-	client.channels.fetch(voicechannel).then(chanel => {
-		chanel.join().then(connection => {
-			clientLogMessage("Status: Successfully connected to voice channel");
-			if (activity) changeActivity(activity);
-			
-			connection.on("debug", e => {
-				if (e.includes('[WS] >>') || e.includes('[WS] <<')) return;
-				clientLogMessage("Status: Connection warning - " + e);
-				//if(e.includes('[WS] closed')) abortWithError();
-			});
-			connection.on("disconnect", () => {
-				clientLogMessage("Status: Connection disconnect");
-			});
-			connection.on("error", e => {
-				clientLogMessage("Status: Connection error");
-				console.log(e);
-			});
-			connection.on("failed", e => {
-				clientLogMessage("Status: Connection failed");
-				console.log(e);
-			});
-			
-			initDispatcher(connection);
-		}).catch(e => {
-			clientLogMessage("Status: Chanel connection error");
-			console.log(e);
-		});
-	}).catch(e => {
-		clientLogMessage("Status: Chanel not found");
-		console.log(e);
-	});
-}
-
-function initDispatcher(connection) {
-	clientLogMessage("Status: Broadcast started");
-	
-	if (serverQueue === undefined || serverQueue.length == 0) {
-		clientLogMessage("Status: Repeating entire playlist");
-		serverQueue = [...list];
-	}
-	const currentTrack = serverQueue.shift();
-	if (currentTrack.name) changeActivity(currentTrack.name);
-	
-	const streamDispatcher = connection.play(currentTrack.url, {
-			volume: false,
-			highWaterMark: 512,
-			bitrate: 128,
-			fec: true
-		})
-		.on("finish", () => {
-			clientLogMessage("Status: Broadcast was finished");
-			streamDispatcher.destroy();
-			initDispatcher(connection);
-		});
-		
-	streamDispatcher.setBitrate(128);
-	streamDispatcher.setFEC(true);
-	
-	streamDispatcher.on("debug", e => {
-		clientLogMessage("Status: Dispatcher warning - " + e);
-	});
-	streamDispatcher.on("error", e => {
-		clientLogMessage("Status: Broadcast connection error");
-		console.log(e);
-		abortWithError();
-	});
-	
-	getICY(currentTrack.url);
-}
-
-function getICY(url) {
-	const icyReader = icy.get(url, function (i) {
-		i.on('metadata', function (metadata) {
-			let icyData = icy.parse(metadata);
-			if (icyData.StreamTitle) changeActivity(icyData.StreamTitle);
-		});
-		i.resume();
-	});
-}
-
-function abortWithError() {
-	clientLogMessage("Status: The connection to the radio station is interrupted or it does not respond, interrupting the process");
-	streamDispatcher.destroy();
-	process.exit(1);
-}
-
-function clientLogMessage(message) {
-	client.channels.fetch(logchannel).then(chanel => {
-		chanel.send(message)
-	}).catch(e => console.log(e));
-	
-	console.log(message);
-}
-
-function changeActivity(message) {
-	clientLogMessage("Now playing: " + message);
-	client.user.setActivity(message, {
-		type: 'LISTENING'
-	});;
-}
